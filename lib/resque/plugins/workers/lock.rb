@@ -46,6 +46,10 @@ module Resque
             if Resque.redis.incr(workers_lock) <= concurrent_workers(*args)
               Resque.redis.expire(workers_lock, worker_lock_timeout(*args))
             elsif
+              count = Resque.redis.decr(workers_lock) 
+              if count.to_i > 0 && Resque.redis.ttl(workers_lock) < 0
+                Resque.redis.expire(workers_lock, worker_lock_timeout(*args))
+              end
               sleep(requeue_perform_delay)
               Resque.enqueue(self, *args)
               raise Resque::Job::DontPerform
