@@ -33,13 +33,19 @@ module Resque
           1.0
         end
 
+        # Number of maximum concurrent workers allow
+        def concurrent_workers(*args)
+          1
+        end
+
         # Called with the job args before perform.
         # If it raises Resque::Job::DontPerform, the job is aborted.
         def before_perform_workers_lock(*args)
           if lock_workers(*args)
-            if Resque.redis.setnx(get_lock_workers(*args), true)
-              Resque.redis.expire(get_lock_workers(*args), worker_lock_timeout(*args))
-            else
+            workers_lock = get_lock_workers(*args)
+            if Resque.redis.incr(workers_lock) <= concurrent_workers(*args)
+              Resque.redis.expire(workers_lock, worker_lock_timeout(*args))
+            elsif
               sleep(requeue_perform_delay)
               Resque.enqueue(self, *args)
               raise Resque::Job::DontPerform
@@ -47,23 +53,24 @@ module Resque
           end
         end
 
-        def clear_workers_lock(*args)
-          Resque.redis.del(get_lock_workers(*args))
+        def decr_workers_lock(*args)
+          Resque.redis.decr(get_lock_workers(*args))
         end
 
         def around_perform_workers_lock(*args)
           yield
         ensure
           # Clear the lock. (even with errors)
-          clear_workers_lock(*args)
+          decr_workers_lock(*args)
         end
 
         def on_failure_workers_lock(exception, *args)
           # Clear the lock on DirtyExit
-          clear_workers_lock(*args)
+          decr_workers_lock(*args)
         end
 
       end
     end
   end
 end
+

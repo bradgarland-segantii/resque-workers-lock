@@ -19,7 +19,11 @@ class LockTest < Test::Unit::TestCase
   end
 
   def test_workers_dont_work_simultaneously
-    assert_locking_works_with jobs: 2, workers: 2
+    assert_locking_works_with jobs: 2, workers: 2, max_workers: 1
+  end
+
+  def test_two_workers_work_simultaneously
+    assert_locking_works_with jobs: 3, workers: 3, max_workers: 2
   end
 
   def test_worker_locks_timeout
@@ -70,14 +74,15 @@ class LockTest < Test::Unit::TestCase
     output_file = Tempfile.new 'output_file'
 
     jobs.each do |job|
-      Resque.enqueue UniqueJob, job: job, output_file: output_file.path
+      Resque.enqueue UniqueJob, job: job, output_file: output_file.path, max_workers: options[:max_workers]
     end
 
-    process_jobs workers: options[:workers], timeout: 10
+    process_jobs workers: options[:workers], timeout: 20
 
     lines = File.readlines(output_file).map(&:chomp)
-    lines.each_slice(2) do |a,b|
-      assert_equal a.split.last,b.split.last, "#{a} was interrupted by #{b}"
+    lines.each_slice(options[:max_workers] + 1) do |jobs|
+      job_ids = jobs.map {|j| j[/([0-9]+)/, 1]}
+      assert_equal job_ids.uniq.size, options[:max_workers], "#{jobs} are executed concurrently"
     end
   end
 

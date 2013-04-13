@@ -12,6 +12,10 @@ class UniqueJob
     self.name
   end
 
+  def self.concurrent_workers(args)
+    args['max_workers'] ? args['max_workers'].to_i : 1
+  end
+
   def self.append_output filename, string
     File.open(filename, 'a') do |output_file|
       output_file.puts string
